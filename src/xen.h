@@ -2,6 +2,7 @@
 #define __XEN_H
 
 #include "util.h"
+#include "config.h"
 
 extern u32 xen_cpuid_base;
 
@@ -146,6 +147,80 @@ typedef unsigned long xen_pfn_t;
 #define set_xen_guest_handle_raw(hnd, val)  do { (hnd).p = val; } while (0)
 #define set_xen_guest_handle(hnd, val) set_xen_guest_handle_raw(hnd, val)
 
+/****
+ * This is needed to get the shared info page
+ ****/
+
+
+struct arch_shared_info {
+	unsigned long max_pfn;                  /* max pfn that appears in table */
+	/* Frame containing list of mfns containing list of mfns containing p2m. */
+	xen_pfn_t     pfn_to_mfn_frame_list_list;
+	unsigned long nmi_reason;
+	u64 pad[32];
+};
+typedef struct arch_shared_info arch_shared_info_t;
+
+struct arch_vcpu_info {
+	unsigned long cr2;
+	unsigned long pad[5]; /* sizeof(vcpu_info_t) == 64 */
+};
+typedef struct arch_vcpu_info arch_vcpu_info_t;
+
+struct vcpu_time_info {
+	/*
+	 * Updates to the following values are preceded and followed by an
+	 * increment of 'version'. The guest can therefore detect updates by
+	 * looking for changes to 'version'. If the least-significant bit of
+	 * the version number is set then an update is in progress and the guest
+	 * must wait to read a consistent set of values.
+	 * The correct way to interact with the version number is similar to
+	 * Linux's seqlock: see the implementations of read_seqbegin/read_seqretry.
+	 */
+	u32 version;
+	u32 pad0;
+	u64 tsc_timestamp;   /* TSC at last update of time vals.  */
+	u64 system_time;     /* Time, in nanosecs, since boot.    */
+	/*
+	 * Current system time:
+	 *   system_time +
+	 *   ((((tsc - tsc_timestamp) << tsc_shift) * tsc_to_system_mul) >> 32)
+	 * CPU frequency (Hz):
+	 *   ((10^9 << 32) / tsc_to_system_mul) >> tsc_shift
+	 */
+	u32 tsc_to_system_mul;
+	u8   tsc_shift;
+	u8   pad1[3];
+}; /* 32 bytes */
+typedef struct vcpu_time_info vcpu_time_info_t;
+
+
+struct vcpu_info {
+	u8 evtchn_upcall_pending;
+	u8 evtchn_upcall_mask;
+	unsigned long evtchn_pending_sel;
+	struct arch_vcpu_info arch;
+	struct vcpu_time_info time;
+};  /*64 bytes (x86)*/
+
+#define XEN_LEGACY_MAX_VCPUS 32
+
+struct shared_info {
+	struct vcpu_info vcpu_info[XEN_LEGACY_MAX_VCPUS];
+	unsigned long evtchn_pending[sizeof(unsigned long) * 8];
+	unsigned long evtchn_mask[sizeof(unsigned long) * 8];
+	u32 wc_version;      /* Version counter: see vcpu_time_info_t. */
+	u32 wc_sec;          /* Secs  00:00:00 UTC, Jan 1, 1970.  */
+	u32 wc_nsec;         /* Nsecs 00:00:00 UTC, Jan 1, 1970.  */
+
+	struct arch_shared_info arch;
+
+};
+typedef struct shared_info shared_info_t;
+
+
+struct shared_info *get_shared_info(void);
+
 /******************************************************************************
  * version.h
  *
@@ -218,6 +293,7 @@ struct xen_hvm_param {
     u64 value;    //IN/OUT
 };
 
+
 /******************************************************************************
  * event_channel.h
  *
@@ -271,6 +347,86 @@ DEFINE_XEN_GUEST_HANDLE(sched_poll_t);
 #define	ENOSYS		38	/* Function not implemented */
 #define	EISCONN		106	/* Transport endpoint is already connected */
 
+/*
+ * xs_wire.h
+ * Details of the "wire" protocol between Xen Store Daemon and client
+ * library or guest kernel.
+ *
+ * Copyright (C) 2005 Rusty Russell IBM Corporation
+ */
+#define XENSTORE_PAYLOAD_MAX 4096
+
+enum xsd_sockmsg_type
+{
+    XS_DEBUG,
+    XS_DIRECTORY,
+    XS_READ,
+    XS_GET_PERMS,
+    XS_WATCH,
+    XS_UNWATCH,
+    XS_TRANSACTION_START,
+    XS_TRANSACTION_END,
+    XS_INTRODUCE,
+    XS_RELEASE,
+    XS_GET_DOMAIN_PATH,
+    XS_WRITE,
+    XS_MKDIR,
+    XS_RM,
+    XS_SET_PERMS,
+    XS_WATCH_EVENT,
+    XS_ERROR,
+    XS_IS_DOMAIN_INTRODUCED,
+    XS_RESUME,
+    XS_SET_TARGET,
+    XS_RESTRICT
+};
+
+#define XS_WRITE_NONE "NONE"
+#define XS_WRITE_CREATE "CREATE"
+#define XS_WRITE_CREATE_EXCL "CREATE|EXCL"
+
+/* We hand errors as strings, for portability. */
+struct xsd_errors
+{
+    int errnum;
+    const char *errstring;
+};
+
+struct xsd_sockmsg
+{
+    u32 type;  /* XS_??? */
+    u32 req_id;/* Request identifier, echoed in daemon's response.  */
+    u32 tx_id; /* Transaction id (0 if not related to a transaction). */
+    u32 len;   /* Length of data following this. */
+
+    /* Generally followed by nul-terminated string(s). */
+};
+
+enum xs_watch_type
+{
+    XS_WATCH_PATH = 0,
+    XS_WATCH_TOKEN
+};
+
+/* Inter-domain shared memory communications. */
+#define XENSTORE_RING_SIZE 1024
+typedef u32 XENSTORE_RING_IDX;
+#define MASK_XENSTORE_IDX(idx) ((idx) & (XENSTORE_RING_SIZE-1))
+struct xenstore_domain_interface {
+    char req[XENSTORE_RING_SIZE]; /* Requests to xenstore daemon. */
+    char rsp[XENSTORE_RING_SIZE]; /* Replies and async watch events. */
+    XENSTORE_RING_IDX req_cons, req_prod;
+    XENSTORE_RING_IDX rsp_cons, rsp_prod;
+};
+
+#define XSD_ERROR(x) { x, #x }
+static struct xsd_errors __attribute__ ((unused)) xsd_errors[]
+    = {
+    XSD_ERROR(EINVAL),
+    XSD_ERROR(EACCES),
+    XSD_ERROR(EIO),
+    XSD_ERROR(EISCONN)
+};
 
 /******************************************************************************
  * memory.h

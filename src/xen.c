@@ -142,3 +142,21 @@ void xen_setup(void)
     RamSize = maxram;
     RamSizeOver4G = maxram_over4G;
 }
+
+struct shared_info *get_shared_info(void)
+{
+    static struct shared_info *shared_info = NULL;
+    struct xen_add_to_physmap xatp;
+
+    if (shared_info != NULL)
+        return shared_info;
+
+    xatp.domid = DOMID_SELF;
+    xatp.space = XENMAPSPACE_shared_info;
+    xatp.idx   = 0;
+    xatp.gpfn  = 0xfffffu;
+    shared_info = (struct shared_info *)(xatp.gpfn << PAGE_SHIFT);
+    if (hypercall_memory_op(XENMEM_add_to_physmap, &xatp) != 0)
+        panic("MAP info page fail");
+    return shared_info;
+}
