@@ -73,11 +73,6 @@ void xen_probe(void)
     }
 }
 
-static int hypercall_xen_version( int cmd, void *arg)
-{
-    return _hypercall2(int, xen_version, cmd, arg);
-}
-
 /* Fill in hypercall transfer pages. */
 void xen_init_hypercalls(void)
 {
