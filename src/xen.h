@@ -99,6 +99,7 @@ typedef unsigned long xen_pfn_t;
     (type)__res;                                                        \
 })
 
+
 /******************************************************************************
  *
  * The following interface definitions are taken from Xen and have the
@@ -186,6 +187,25 @@ __DEFINE_XEN_GUEST_HANDLE(u16, u16);
 __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 
 #define __HYPERVISOR_xen_version          17
+#define __HYPERVISOR_event_channel_op     32
+
+/******************************************************************************
+ * event_channel.h
+ *
+ * Event channels between domains.
+ *
+ * Copyright (c) 2003-2004, K A Fraser.
+ */
+
+typedef u32 evtchn_port_t;
+DEFINE_XEN_GUEST_HANDLE(evtchn_port_t);
+
+#define EVTCHNOP_send             4
+struct evtchn_send {
+    /* IN parameters. */
+    evtchn_port_t port;
+};
+typedef struct evtchn_send evtchn_send_t;
 
 /*
  * Wrappers for hypercalls
@@ -193,6 +213,11 @@ __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 static int hypercall_xen_version( int cmd, void *arg)
 {
 	return _hypercall2(int, xen_version, cmd, arg);
+}
+
+static inline int hypercall_event_channel_op(int cmd, void *arg)
+{
+	return _hypercall2(int, event_channel_op, cmd, arg);
 }
 
 #endif
