@@ -186,6 +186,7 @@ __DEFINE_XEN_GUEST_HANDLE(u8,  u8);
 __DEFINE_XEN_GUEST_HANDLE(u16, u16);
 __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 
+#define __HYPERVISOR_memory_op            12
 #define __HYPERVISOR_xen_version          17
 #define __HYPERVISOR_event_channel_op     32
 #define __HYPERVISOR_hvm_op               34
@@ -234,6 +235,41 @@ struct evtchn_send {
 };
 typedef struct evtchn_send evtchn_send_t;
 
+/******************************************************************************
+ * memory.h
+ *
+ * Memory reservation and information.
+ *
+ * Copyright (c) 2005, Keir Fraser <keir@xensource.com>
+ */
+/*
+ * Sets the GPFN at which a particular page appears in the specified guest's
+ * pseudophysical address space.
+ * arg == addr of xen_add_to_physmap_t.
+ */
+#define XENMEM_add_to_physmap      7
+struct xen_add_to_physmap {
+    /* Which domain to change the mapping for. */
+    u64 domid;
+
+    /* Source mapping space. */
+#define XENMAPSPACE_shared_info 0 /* shared info page */
+#define XENMAPSPACE_grant_table 1 /* grant table page */
+#define XENMAPSPACE_gmfn        2 /* GMFN */
+    unsigned int space;
+
+#define XENMAPIDX_grant_table_status 0x80000000
+
+    /* Index into source mapping space. */
+    xen_ulong_t idx;
+
+    /* GPFN where the source mapping page should appear. */
+    xen_pfn_t     gpfn;
+};
+typedef struct xen_add_to_physmap xen_add_to_physmap_t;
+DEFINE_XEN_GUEST_HANDLE(xen_add_to_physmap_t);
+
+
 /*
  * Wrappers for hypercalls
  */
@@ -251,5 +287,11 @@ static inline int hypercall_event_channel_op(int cmd, void *arg)
 {
 	return _hypercall2(int, event_channel_op, cmd, arg);
 }
+
+static inline int hypercall_memory_op(int cmd ,void *arg)
+{
+	return _hypercall2(int, memory_op, cmd ,arg);
+}
+
 
 #endif
