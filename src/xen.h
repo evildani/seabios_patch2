@@ -188,6 +188,7 @@ __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 
 #define __HYPERVISOR_memory_op            12
 #define __HYPERVISOR_xen_version          17
+#define __HYPERVISOR_sched_op             29
 #define __HYPERVISOR_event_channel_op     32
 #define __HYPERVISOR_hvm_op               34
 
@@ -234,6 +235,42 @@ struct evtchn_send {
     evtchn_port_t port;
 };
 typedef struct evtchn_send evtchn_send_t;
+
+/******************************************************************************
+ * sched.h
+ *
+ * Scheduler state interactions
+ *
+ * Copyright (c) 2005, Keir Fraser <keir@xensource.com>
+ */
+
+
+
+/*
+ * Poll a set of event-channel ports. Return when one or more are pending. An
+ * optional timeout may be specified.
+ * @arg == pointer to sched_poll structure.
+ */
+#define SCHEDOP_poll        3
+struct sched_poll {
+    XEN_GUEST_HANDLE(evtchn_port_t) ports;
+    unsigned int nr_ports;
+    u64 timeout;
+};
+typedef struct sched_poll sched_poll_t;
+DEFINE_XEN_GUEST_HANDLE(sched_poll_t);
+
+/*
+ * Error base
+ */
+#define	EPERM		 1	/* Operation not permitted */
+#define	ENOENT		 2	/* No such file or directory */
+#define	EIO		 5	/* I/O error */
+#define	EACCES		13	/* Permission denied */
+#define	EINVAL		22	/* Invalid argument */
+#define	ENOSYS		38	/* Function not implemented */
+#define	EISCONN		106	/* Transport endpoint is already connected */
+
 
 /******************************************************************************
  * memory.h
@@ -291,6 +328,11 @@ static inline int hypercall_event_channel_op(int cmd, void *arg)
 static inline int hypercall_memory_op(int cmd ,void *arg)
 {
 	return _hypercall2(int, memory_op, cmd ,arg);
+}
+
+static inline int hypercall_sched_op(int cmd, void *arg)
+{
+	return _hypercall2(int, sched_op, cmd, arg);
 }
 
 
