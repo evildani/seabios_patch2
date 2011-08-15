@@ -188,6 +188,33 @@ __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 
 #define __HYPERVISOR_xen_version          17
 #define __HYPERVISOR_event_channel_op     32
+#define __HYPERVISOR_hvm_op               34
+
+/*
+ *  from: xen/include/public/hvm/hvm_op.h
+ */
+
+/*
+ *  in an HVM guest you find your xenstore ring and evtchn via hvmparams,
+ *  HVM_PARAM_STORE_PFN and HVM_PARAM_STORE_EVTCHN.
+ *  it's a hypercall (type) hvmop, subcommand HVMOP_get_param (this is the hypercall actually) with this:
+ *  Get/set subcommands: extra argument == pointer to xen_hvm_param struct.
+*/
+#define HVMOP_set_param  0
+#define HVMOP_get_param  1
+
+/*
+ * from: include/public/hvm/params.h
+ */
+
+#define HVM_PARAM_STORE_PFN    1 //pass as index
+#define HVM_PARAM_STORE_EVTCHN 2 //pass as index
+
+struct xen_hvm_param {
+    u32 domid;    //IN
+    u32 index;    //IN
+    u64 value;    //IN/OUT
+};
 
 /******************************************************************************
  * event_channel.h
@@ -213,6 +240,11 @@ typedef struct evtchn_send evtchn_send_t;
 static int hypercall_xen_version( int cmd, void *arg)
 {
 	return _hypercall2(int, xen_version, cmd, arg);
+}
+
+static inline int hypercall_hvm_op(int cmd, void *arg)
+{
+	return _hypercall2(int, hvm_op, cmd, arg);
 }
 
 static inline int hypercall_event_channel_op(int cmd, void *arg)
