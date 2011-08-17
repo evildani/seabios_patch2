@@ -21,6 +21,8 @@ void memmap_finalize(void);
 
 // A typical OS page size
 #define PAGE_SIZE 4096
+//Used by Virtio and Xen
+#define PAGE_SHIFT 12
 
 // e820 map storage (defined in system.c)
 extern struct e820entry e820_list[];

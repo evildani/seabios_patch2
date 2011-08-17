@@ -4,7 +4,7 @@
 #include "types.h" // u64
 #include "memmap.h" // PAGE_SIZE
 
-#define PAGE_SHIFT 12
+
 #define PAGE_MASK  (PAGE_SIZE-1)
 
 #define virt_to_phys(v) (unsigned long)(v)
