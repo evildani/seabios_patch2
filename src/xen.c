@@ -91,7 +91,7 @@ void xen_init_hypercalls(void)
 
     dprintf(1, "Allocated Xen hypercall page at %lx\n", xen_hypercall_page);
     for ( i = 0; i < eax; i++ )
-        wrmsr(ebx, xen_hypercall_page + (i << 12) + i);
+        wrmsr(ebx, xen_hypercall_page + (i << PAGE_SHIFT) + i);
 
     /* Print version information. */
     cpuid(xen_cpuid_base + 1, &eax, &ebx, &ecx, &edx);
