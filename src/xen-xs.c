@@ -36,7 +36,7 @@ static struct xenstore_domain_interface *rings; /* Shared ring with dom0 */
 static evtchn_port_t event;                     /* Event-channel to dom0 */
 static char payload[XENSTORE_PAYLOAD_MAX + 1];  /* Unmarshalling area */
 
-
+void test_xenstore(void);
 /*
  * Connect our xenbus client to the backend.
  * Call once, before any other xenbus actions.
@@ -62,6 +62,7 @@ void xenbus_setup(void)
 	event = param.value;
 	dprintf(1,"Xenbus rings @0x%lx, event channel %lu\n",
 			(unsigned long) rings, (unsigned long) event);
+	test_xenstore();
 }
 
 /*
@@ -242,4 +243,12 @@ char * xenstore_directory(char *path, u32 *ans_len)
 	}
 	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
 	return answer;
+}
+
+void test_xenstore(void){
+	char  * path = "device/vbd ";
+	path[10] = '\0'; /*null-terminated is mandatory*/
+	u32 ans_len;
+	char * res = xenstore_directory(path,&ans_len);
+	dprintf(1,"length: %d strlen: %d vdb-id: %s .\n",ans_len,strlen(res),res);
 }
