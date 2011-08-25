@@ -37,6 +37,46 @@ static evtchn_port_t event;                     /* Event-channel to dom0 */
 static char payload[XENSTORE_PAYLOAD_MAX + 1];  /* Unmarshalling area */
 
 void test_xenstore(void);
+
+/*
+ * a corresponds to path
+ * b is value
+ */
+char * build_write_query(char * a,char *b)
+{
+	int i,j,z;
+	int size = strlen(a)+strlen(b)+1;
+	char *res = malloc_high(size);
+	j=strlen(a)+1; //j points to a's null char
+	for(z=0;z<size;z++){
+		if(z>j){ /*value*/
+			res[z]=b[strlen(b)-(size-z)];
+		}else{ /*path*/
+			*(res+z)=*(a+z);
+		}
+	}
+	*(res+size+1)='\0';
+	return res;
+}
+
+char * strconcat(char *dest, const char *src)
+{
+	size_t dest_len = strlen(dest);
+	size_t i;
+	char *ret = malloc_high(strlen(dest)+strlen(src)+1);
+	for(i = 0 ; dest[i] != '\0' ; i++)
+	{
+		ret[i] = dest[i];
+	}
+	for (i = 0 ; src[i] != '\0' ; i++)
+	{
+		ret[dest_len + i] = src[i];
+	}
+	ret[dest_len + i] = '\0';
+	free(dest);
+	dest = ret;
+	return ret;
+}
 /*
  * Connect our xenbus client to the backend.
  * Call once, before any other xenbus actions.
@@ -245,10 +285,36 @@ char * xenstore_directory(char *path, u32 *ans_len)
 	return answer;
 }
 
+char * xenstore_write(char *path, char *value)
+{
+	if (rings == NULL)
+		panic("rings not defined");
+	char *answer = NULL;
+	u32 ans_len=0;
+	char *query=build_write_query(path,value);
+	/* Include the nul in the request */
+	if ( xenbus_send(XS_WRITE, strlen(path)+strlen(value)+2, query, ans_len, &answer)== XS_ERROR ){
+		return NULL;
+	}
+	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
+	return answer;
+}
+
 void test_xenstore(void){
-	char  * path = "device/vbd ";
-	path[10] = '\0'; /*null-terminated is mandatory*/
+	char  * path = "device/vbd";
+	path[10]='\0';
+	//path[10] = '\0'; /*null-terminated is mandatory*/
 	u32 ans_len;
 	char * res = xenstore_directory(path,&ans_len);
-	dprintf(1,"length: %d strlen: %d vdb-id: %s .\n",ans_len,strlen(res),res);
+	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res),res);
+	dprintf(1,"Write Path is: %s.\n",path);
+	path = strconcat(path,"/");
+	dprintf(1,"Write Path is: %s.\n",path);
+	path = strconcat(path,res); //change path once to add vbd-id
+	dprintf(1,"Write Path is: %s.\n",path);
+	path = strconcat(path,"/test");
+	dprintf(1,"Write Path is: %s.\n",path);
+	res = xenstore_write(path,"DANIEL");
+	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res),res);
 }
+
