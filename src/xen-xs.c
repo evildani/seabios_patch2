@@ -311,5 +311,7 @@ void test_xenstore(void){
 	dprintf(1,"Write Path is: %s.\n",path);
 	char *res2 = xenstore_write(path,res);
 	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res2),res2);
+	res = xenstore_write(path,"DANIEL");
+	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res),res);
 }
 
