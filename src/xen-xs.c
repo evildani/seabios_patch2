@@ -44,18 +44,12 @@ void test_xenstore(void);
  */
 char * build_write_query(char * a,char *b)
 {
-	int i,j,z;
-	int size = strlen(a)+strlen(b)+1;
+	int size = strlen(a)+strlen(b)+2;
 	char *res = malloc_high(size);
-	j=strlen(a)+1; //j points to a's null char
-	for(z=0;z<size;z++){
-		if(z>j){ /*value*/
-			res[z]=b[strlen(b)-(size-z)];
-		}else{ /*path*/
-			*(res+z)=*(a+z);
-		}
-	}
-	*(res+size+1)='\0';
+	dprintf(1,"string path: %s.\n",a);
+	memcpy(res,a,strlen(a)+1);
+	dprintf(1,"string value: %s.\n",b);
+	memcpy(res+strlen(a)+2,b,strlen(b)+1);
 	return res;
 }
 
@@ -292,6 +286,7 @@ char * xenstore_write(char *path, char *value)
 	char *answer = NULL;
 	u32 ans_len=0;
 	char *query=build_write_query(path,value);
+	dprintf(1,"query is: %s%c%s",query,query+strlen(path)+1,query+strlen(path)+2);
 	/* Include the nul in the request */
 	if ( xenbus_send(XS_WRITE, strlen(path)+strlen(value)+2, query, ans_len, &answer)== XS_ERROR ){
 		return NULL;
@@ -314,7 +309,7 @@ void test_xenstore(void){
 	dprintf(1,"Write Path is: %s.\n",path);
 	path = strconcat(path,"/test");
 	dprintf(1,"Write Path is: %s.\n",path);
-	res = xenstore_write(path,"DANIEL");
-	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res),res);
+	char *res2 = xenstore_write(path,res);
+	dprintf(1,"length: %d strlen: %d res: %s.\n",ans_len,strlen(res2),res2);
 }
 
