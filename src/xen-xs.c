@@ -35,21 +35,22 @@
 static struct xenstore_domain_interface *rings; /* Shared ring with dom0 */
 static evtchn_port_t event;                     /* Event-channel to dom0 */
 static char payload[XENSTORE_PAYLOAD_MAX + 1];  /* Unmarshalling area */
-
 void test_xenstore(void);
+
 
 /*
  * a corresponds to path
  * b is value
+ * returns an ill-formed string with no null at the end.
  */
 char * build_write_query(char * a,char *b)
 {
-	int size = strlen(a)+strlen(b)+2;
+	int size = strlen(a)+strlen(b)+1;
 	char *res = malloc_high(size);
-	dprintf(1,"string path: %s.\n",a);
-	memcpy(res,a,strlen(a)+1);
-	dprintf(1,"string value: %s.\n",b);
-	memcpy(res+strlen(a)+2,b,strlen(b)+1);
+	memset(res,0,size);
+	//dprintf(1,"string path: %s\n",a);
+	memcpy(res,a,strlen(a)+1); //include the null in the copy
+	memcpy(res+strlen(a)+1,b,strlen(b)+1); //+1 to include the null
 	return res;
 }
 
@@ -66,7 +67,7 @@ char * strconcat(char *dest, const char *src)
 	{
 		ret[dest_len + i] = src[i];
 	}
-	ret[dest_len + i] = '\0';
+	ret[dest_len + i] = '\0'; //null terminate the string
 	free(dest);
 	dest = ret;
 	return ret;
@@ -125,9 +126,67 @@ static void ring_wait(void)
 	memset(&poll, 0, sizeof(poll));
 	set_xen_guest_handle(poll.ports, &event);
 	poll.nr_ports = 1;
+	struct vcpu_time_info time = shinfo->vcpu_info[0].time;
+	dprintf(1,"TIME system %d timestamp %d\n",time.system_time,time.tsc_timestamp);
+	poll.timeout=time.tsc_timestamp*2;
+	dprintf(1,"evtchn_pending 0x%lx , 0x%02x at event %d \n",shinfo->evtchn_pending,shinfo->evtchn_pending[event],event);
+	int wait = test_and_clear_bit(event, shinfo->evtchn_pending);
+	int ret = 1;
+	while (wait!=0 || ret!=0){
+		ret = hypercall_sched_op(SCHEDOP_poll, &poll);
+		wait = test_and_clear_bit(event, shinfo->evtchn_pending);
+		struct vcpu_info *vcpu = shinfo->vcpu_info;
+		dprintf(1,"DEBUG bit clear is %d and ret %d\n",wait,ret);
+		time = shinfo->vcpu_info[0].time;
+		dprintf(1,"TIME system %d timestamp %d\n",time.system_time,time.tsc_timestamp);
+	}
+}
 
-	while (!test_and_clear_bit(event, shinfo->evtchn_pending))
-		hypercall_sched_op(SCHEDOP_poll, &poll);
+static void print_event_status(void){
+	struct evtchn_status status;
+	struct shared_info *shinfo = get_shared_info();
+	status.dom = DOMID_SELF;
+	status.port = event;
+	status.status = -1;
+	status.vcpu = -1;
+	u8 vpu_mask = shinfo->vcpu_info[0].evtchn_upcall_mask;
+	u8 evnt_pending = shinfo->vcpu_info[0].evtchn_upcall_pending;
+	dprintf(1,"VCPU.0 evtchn_upcall_mask %d AND evntchn_upcall_pending %d\n",vpu_mask,evnt_pending);
+	hypercall_event_channel_op(EVTCHNOP_status,&status);
+	dprintf(1,"Event Chn %d Status %d VCPU %d.\n",status.port,status.status, status.vcpu);
+	if(status.status == EVTCHNSTAT_unbound){
+		dprintf(1,"Event Channel is un bound, can be bound to %d\n",status.u.unbound.dom);
+	}else{
+		dprintf(1,"Event is interdomain to dom %d port %d\n",status.u.interdomain.dom,status.u.interdomain.port);
+	}
+	struct vcpu_time_info time = shinfo->vcpu_info[0].time;
+	dprintf(1,"TIME version %u system %u timestamp %u\n",time.version, time.system_time,time.tsc_timestamp);
+}
+
+static print_ring(void){
+	int i=0;
+	dprintf(1,"REQUEST RING:\n");
+	for(i=0;i<1024;i=i+8){
+		dprintf(1,"%c",rings->req[i]);
+		dprintf(1,"%c",rings->req[i+1]);
+		dprintf(1,"%c",rings->req[i+2]);
+		dprintf(1,"%c",rings->req[i+3]);
+		dprintf(1,"%c",rings->req[i+4]);
+		dprintf(1,"%c",rings->req[i+5]);
+		dprintf(1,"%c",rings->req[i+6]);
+		dprintf(1,"%c\n",rings->req[i+7]);
+	}
+	dprintf(1,"RESPONSE RING:\n");
+	for(i=0;i<1024;i=i+8){
+		dprintf(1,"%c",rings->rsp[i]);
+		dprintf(1,"%c",rings->rsp[i+1]);
+		dprintf(1,"%c",rings->rsp[i+2]);
+		dprintf(1,"%c",rings->rsp[i+3]);
+		dprintf(1,"%c",rings->rsp[i+4]);
+		dprintf(1,"%c",rings->rsp[i+5]);
+		dprintf(1,"%c",rings->rsp[i+6]);
+		dprintf(1,"%c\n",rings->rsp[i+7]);
+	}
 }
 
 /*
@@ -171,6 +230,7 @@ static void ring_read(char *data, u32 len)
 
 	while (len) {
 		while ((part = MASK_XENSTORE_IDX(rings->rsp_prod -rings->rsp_cons)) == 0) {
+			dprintf(1,"Stuck on wait: PART %d ==0 rsp_prod %d rsp_cons %d\n",part,MASK_XENSTORE_IDX(rings->rsp_prod),MASK_XENSTORE_IDX(rings->rsp_cons));
 			ring_wait(); //The ring is not ready or not empty
 		}
 		/* Don't overrun the end of the ring */
@@ -213,8 +273,11 @@ static int xenbus_send(u32 type, u32 len, char *data,
 	ring_write(data, len);
 	/* Tell the other end about the request */
 	send.port = event;
+	//print_ring();
+	print_event_status();
 	ret = hypercall_event_channel_op(EVTCHNOP_send, &send);
-	dprintf(1,"Hypercall event channel notification %d\n",ret);
+	print_event_status();
+	//dprintf(1,"Hypercall event %d channel notification %d\n",event,ret);
 	/* Properly we should poll the event channel now but that involves
 	 * mapping the shared-info page and handling the bitmaps. */
 	/* Pull the reply off the ring */
@@ -286,9 +349,9 @@ char * xenstore_write(char *path, char *value)
 	char *answer = NULL;
 	u32 ans_len=0;
 	char *query=build_write_query(path,value);
-	dprintf(1,"query is: %s%c%s",query,query+strlen(path)+1,query+strlen(path)+2);
+	dprintf(1,"query is: %s%c%s%c\n",query,query+strlen(path),query+strlen(path)+1,query+strlen(path)+strlen(value));
 	/* Include the nul in the request */
-	if ( xenbus_send(XS_WRITE, strlen(path)+strlen(value)+2, query, ans_len, &answer)== XS_ERROR ){
+	if ( xenbus_send(XS_WRITE, strlen(path)+strlen(value)+1, query, ans_len, &answer)== XS_ERROR ){
 		return NULL;
 	}
 	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
@@ -297,7 +360,7 @@ char * xenstore_write(char *path, char *value)
 
 void test_xenstore(void){
 	char  * path = "device/vbd";
-	path[10]='\0';
+	//path[10]='\0';
 	//path[10] = '\0'; /*null-terminated is mandatory*/
 	u32 ans_len;
 	char * res = xenstore_directory(path,&ans_len);
