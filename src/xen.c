@@ -154,8 +154,10 @@ struct shared_info *get_shared_info(void)
     xatp.domid = DOMID_SELF;
     xatp.space = XENMAPSPACE_shared_info;
     xatp.idx   = 0;
-    xatp.gpfn  = malloc_high(sizeof(shared_info));
-    shared_info = (struct shared_info *)(xatp.gpfn << PAGE_SHIFT);
+    shared_info = malloc_high(sizeof(shared_info));
+    xatp.gpfn  = ((unsigned long)shared_info << PAGE_SHIFT);
+    //xatp.gpfn  = malloc_high(sizeof(shared_info));
+    //shared_info = (struct shared_info *)(xatp.gpfn << PAGE_SHIFT);
     if (hypercall_memory_op(XENMEM_add_to_physmap, &xatp) != 0)
         panic("MAP info page fail");
     return shared_info;
