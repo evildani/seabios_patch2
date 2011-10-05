@@ -112,6 +112,8 @@ void xenbus_shutdown(void)
 	rings = NULL;
 }
 
+
+
 /*
  * 1. Get xen shared info
  * 2. get the guest event handle
@@ -120,65 +122,16 @@ void xenbus_shutdown(void)
  */
 static void ring_wait(void)
 {
-	struct shared_info *shinfo = get_shared_info();
-	struct sched_poll poll;
-
-	memset(&poll, 0, sizeof(poll));
-	set_xen_guest_handle(poll.ports, &event);
-	poll.nr_ports = 1;
-	dprintf(1,"evtchn_pending 0x%p , 0x%lx at event %d \n",shinfo->evtchn_pending,shinfo->evtchn_pending[event],event);
-	int wait = test_and_clear_bit(event, shinfo->evtchn_pending);
-	int ret = 1;
-	while (!wait || ret){
-		ret = hypercall_sched_op(SCHEDOP_poll, &poll);
-		wait = test_and_clear_bit(event, shinfo->evtchn_pending);
-		dprintf(1,"DEBUG bit clear is %d and ret %d\n",wait,ret);
-	}
-}
-
-static void ring_wait2(void)
-{
-	dprintf(1,"Start sleeping wait\n");
+	dprintf(3,"Start sleeping wait\n");
     struct shared_info *shinfo = get_shared_info();
     struct sched_poll poll;
     memset(&poll, 0, sizeof(poll));
     set_xen_guest_handle(poll.ports, &event);
     poll.nr_ports = 1;
-    int i = 0;
-    int j = 0;
-    while ( !test_and_clear_bit(event, shinfo->evtchn_pending) ){
-    	if(i<3){
-    		i++;
-    		dprintf(1,"wait loop started\n");
-    	}
+    while (!test_and_clear_bit(event, shinfo->evtchn_pending)){
     	hypercall_sched_op(SCHEDOP_poll, &poll);
-    	if(j<3){
-    		j++;
-    		dprintf(1,"wait loop after hypercall started\n");
-    	}
     }
-    dprintf(1,"Weak up from sleep\n");
-}
-
-static void print_event_status(void){
-	struct evtchn_status status;
-	struct shared_info *shinfo = get_shared_info();
-	status.dom = DOMID_SELF;
-	status.port = event;
-	status.status = -1;
-	status.vcpu = -1;
-	u8 vpu_mask = shinfo->vcpu_info[0].evtchn_upcall_mask;
-	u8 evnt_pending = shinfo->vcpu_info[0].evtchn_upcall_pending;
-	dprintf(1,"VCPU.0 evtchn_upcall_mask %d AND evntchn_upcall_pending %d\n",vpu_mask,evnt_pending);
-	hypercall_event_channel_op(EVTCHNOP_status,&status);
-	dprintf(1,"Event Chn %d Status %d VCPU %d.\n",status.port,status.status, status.vcpu);
-	if(status.status == EVTCHNSTAT_unbound){
-		dprintf(1,"Event Channel is un bound, can be bound to %d\n",status.u.unbound.dom);
-	}else{
-		dprintf(1,"Event is interdomain to dom %d port %d\n",status.u.interdomain.dom,status.u.interdomain.port);
-	}
-	int bit = test_bit(event, shinfo->evtchn_pending);
-	dprintf(1,"Event bit is %d for event %d.\n",bit,event);
+    dprintf(3,"Weak up from sleep\n");
 }
 
 
@@ -223,7 +176,6 @@ static void ring_read(char *data, u32 len)
 
 	while (len) {
 		while ((part = MASK_XENSTORE_IDX(rings->rsp_prod -rings->rsp_cons)) == 0) {
-			dprintf(1,"Stuck on wait: PART %d ==0 rsp_prod %d rsp_cons %d\n",part,MASK_XENSTORE_IDX(rings->rsp_prod),MASK_XENSTORE_IDX(rings->rsp_cons));
 			ring_wait(); //The ring is not ready or not empty
 		}
 		/* Don't overrun the end of the ring */
@@ -266,11 +218,7 @@ static int xenbus_send(u32 type, u32 len, char *data,
 	ring_write(data, len);
 	/* Tell the other end about the request */
 	send.port = event;
-	//print_ring();
-	//print_event_status();
 	ret = hypercall_event_channel_op(EVTCHNOP_send, &send);
-	//print_event_status();
-	//dprintf(1,"Hypercall event %d channel notification %d\n",event,ret);
 	/* Properly we should poll the event channel now but that involves
 	 * mapping the shared-info page and handling the bitmaps. */
 	/* Pull the reply off the ring */
@@ -294,40 +242,34 @@ static int xenbus_send(u32 type, u32 len, char *data,
 	return hdr.type;
 }
 
+/*
+ * This function will call a wait at the end
+ * it need to be waken up by an event arrival
+ */
 char* xenstore_watch(char *path, char * key){
+	dprintf(3,"xenstore watch start\n");
 	if (rings == NULL)
 		panic("rings not defined");
 	char *answer = NULL;
 	u32 ans_len=0;
-	if ( xenbus_send(XS_WATCH, strlen(path)+1, path, &ans_len, &answer)== XS_ERROR ){
-		return NULL;
-	}
-	dprintf(1,"XEN_WATCH response: %s.\n",answer);
-	//ring_wait2();
-	dprintf(1,"I was waked by Xenstore event: %s.\n",answer);
-
-	dprintf(1,"path is %s\n",path);
-	dprintf(1,"key is %s\n",key);
 	char *query=build_write_query(path,key);
-	int i=0;
-	dprintf(1,"For Watch query: \n");
-	for(i=0;i<=strlen(path)+strlen(key)+1;i++){
+	dprintf(2,"path %s. key %s. \n",path,key);
+	int i;
+	for(i=0;i<strlen(path)+strlen(key)+2;i++){
 		if(query[i]=='\0'){
-			dprintf(1,"NULL");
+			dprintf(3,"NULL");
 		}else{
-			dprintf(1,"%c",query[i]);
+			dprintf(3,"%c",query[i]);
 		}
 	}
-	dprintf(1,".\n");
-	/* Include the nul in the request */
+	dprintf(3,".\n");
 	if ( xenbus_send(XS_WATCH, strlen(path)+strlen(key)+2, query, &ans_len, &answer)== XS_ERROR ){
 		return NULL;
 	}
-	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
-	dprintf(1,"XEN_WATCH response: %s.\n",answer);
-	//ring_wait2();
-	dprintf(1,"I was waked by Xenstore event: %s.\n",answer);
-
+	dprintf(3,"XEN_WATCH response: %s.\n",answer);
+	ring_wait();
+	dprintf(3,"I was waked by Xenstore event: %s.\n",answer);
+	dprintf(3,"xenstore watch end\n");
 	return answer;
 }
 
@@ -338,6 +280,7 @@ char* xenstore_watch(char *path, char * key){
  */
 char * xenstore_read(char *path)
 {
+	dprintf(3,"read start\n");
 	if (rings == NULL)
 		panic("rings not defined");
 	u32 len = 0;
@@ -348,6 +291,7 @@ char * xenstore_read(char *path)
 		return NULL;
 	}
 	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
+	dprintf(3,"read end\n");
 	return answer;
 }
 
@@ -359,6 +303,7 @@ char * xenstore_read(char *path)
  */
 char * xenstore_directory(char *path, u32 *ans_len)
 {
+	dprintf(3,"directory start\n");
 	if (rings == NULL)
 		panic("rings not defined");
 	char *answer = NULL;
@@ -368,11 +313,13 @@ char * xenstore_directory(char *path, u32 *ans_len)
 		return NULL;
 	}
 	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
+	dprintf(3,"directory end\n");
 	return answer;
 }
 
 char * xenstore_write(char *path, char *value)
 {
+	dprintf(3,"write start\n");
 	if (rings == NULL)
 		panic("rings not defined");
 	char *answer = NULL;
@@ -383,25 +330,27 @@ char * xenstore_write(char *path, char *value)
 		return NULL;
 	}
 	/* We know xenbus_send() nul-terminates its answer, so just pass it on. */
+	dprintf(1,"write end\n");
 	return answer;
 }
 
 void test_xenstore(void){
 	char  * path = "device/vbd";
 	u32 ans_len;
-	char * query;
-	char * res = xenstore_directory(path,&ans_len);
+	char * res = xenstore_directory(path,&ans_len); //ans_len tells you if there are more answers in the string
+	char * vdbid = malloc_high(strlen(res)+1);
+	memcpy(vdbid,res,strlen(res)+1);
 	path = strconcat(path,"/");
 	path = strconcat(path,res); //change path once to add vbd-id
 	path = strconcat(path,"/test");
 	dprintf(1,"Write Path is: %s.\n",path);
-	char *res2 = xenstore_write(path,res);
-	query = build_write_query(path,res);
+	char *res2 = xenstore_write(path,res); //res contains the vbd-id number
 	dprintf(1,"Xenstore Write %s length: %d strlen: %d res: %s.\n",res,ans_len,strlen(res2),res2);
-	res2 = xenstore_watch(path,path);
-	dprintf(1,"Xenstore Watch %s length: %d strlen: %d res: %s.\n",res,ans_len,strlen(res2),res2);
-	ring_wait2(); //user must generate event to test /local/domain/XX/device/vbd/768/test
-	ring_wait2(); //user must generate event to test
-	print_event_status();
+	path = "device/vbd";
+	path = strconcat(path,"/");
+	path = strconcat(path,vdbid); //change path once to add vbd-id
+	path = strconcat(path,"/test");
+	res2 = xenstore_watch(path,"DANIEL");
+	dprintf(1,"Xenstore Watch %s strlen: %d res: %s.\n",path,strlen(res2),res2);
 }
 

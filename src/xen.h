@@ -288,7 +288,7 @@ __DEFINE_XEN_GUEST_HANDLE(u32, u32);
 #define HVM_PARAM_STORE_EVTCHN 2 //pass as index
 
 struct xen_hvm_param {
-    u32 domid;    //IN
+    u16 domid;    //IN
     u32 index;    //IN
     u64 value;    //IN/OUT
 };
@@ -357,6 +357,20 @@ typedef struct evtchn_status evtchn_status_t;
  * Copyright (c) 2005, Keir Fraser <keir@xensource.com>
  */
 
+/*
+ * Voluntarily yield the CPU.
+ * @arg == NULL.
+ */
+#define SCHEDOP_yield       0
+
+/*
+ * Block execution of this VCPU until an event is received for processing.
+ * If called with event upcalls masked, this operation will atomically
+ * reenable event delivery and check for pending events before blocking the
+ * VCPU. This avoids a "wakeup waiting" race.
+ * @arg == NULL.
+ */
+#define SCHEDOP_block       1
 
 
 /*
@@ -480,7 +494,7 @@ static struct xsd_errors __attribute__ ((unused)) xsd_errors[]
 #define XENMEM_add_to_physmap      7
 struct xen_add_to_physmap {
     /* Which domain to change the mapping for. */
-    u64 domid;
+    u16 domid;
 
     /* Source mapping space. */
 #define XENMAPSPACE_shared_info 0 /* shared info page */
@@ -503,7 +517,7 @@ DEFINE_XEN_GUEST_HANDLE(xen_add_to_physmap_t);
 /*
  * Wrappers for hypercalls
  */
-static int hypercall_xen_version( int cmd, void *arg)
+static inline int hypercall_xen_version( int cmd, void *arg)
 {
 	return _hypercall2(int, xen_version, cmd, arg);
 }

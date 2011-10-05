@@ -154,11 +154,19 @@ struct shared_info *get_shared_info(void)
     xatp.domid = DOMID_SELF;
     xatp.space = XENMAPSPACE_shared_info;
     xatp.idx   = 0;
-    shared_info = malloc_high(sizeof(shared_info));
-    xatp.gpfn  = ((unsigned long)shared_info << PAGE_SHIFT);
+    shared_info = memalign_high(PAGE_SIZE, PAGE_SIZE);
+    memset(shared_info, 0, PAGE_SIZE);
+    xatp.gpfn  = ((unsigned long)shared_info >> PAGE_SHIFT);
+    dprintf(1, "allocated shared info %d bytes at %p, gpfn 0x%lx\n",sizeof(*shared_info), shared_info, xatp.gpfn);
     //xatp.gpfn  = malloc_high(sizeof(shared_info));
     //shared_info = (struct shared_info *)(xatp.gpfn << PAGE_SHIFT);
     if (hypercall_memory_op(XENMEM_add_to_physmap, &xatp) != 0)
-        panic("MAP info page fail");
+    	panic("MAP info page fail");
+    dprintf(1, "time is %d\n", shared_info->wc_sec);
+    dprintf(1, "evtchn_pending[0] 0x%08lx\n", shared_info->evtchn_pending[0]);
+    dprintf(1, "evtchn_mask[0] 0x%08lx\n", shared_info->evtchn_mask[0]);
+    dprintf(1, "VCPU0 evtchn_upcall_pending 0x%x\n", shared_info->vcpu_info[0].evtchn_upcall_pending);
+    dprintf(1, "VCPU0 evtchn_upcall_mask 0x%x\n", shared_info->vcpu_info[0].evtchn_upcall_mask);
+    dprintf(1, "VCPU0 evtchn_pending_sel 0x%08lx\n", shared_info->vcpu_info[0].evtchn_pending_sel);
     return shared_info;
 }
