@@ -578,6 +578,185 @@ typedef struct blkif_response blkif_response_t;
  /* Operation completed successfully. */
 #define BLKIF_RSP_OKAY         0
 
+/******************************************************************************
+ * Verbatim copy from
+ * grant_table.h
+ *
+ * Interface for granting foreign access to page frames, and receiving
+ * page-ownership transfers.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ *
+ * Copyright (c) 2004, K A Fraser
+ */
+
+/*
+ * Type of grant entry.
+ *  GTF_invalid: This grant entry grants no privileges.
+ *  GTF_permit_access: Allow @domid to map/access @frame.
+ *  GTF_accept_transfer: Allow @domid to transfer ownership of one page frame
+ *                       to this guest. Xen writes the page number to @frame.
+ *  GTF_transitive: Allow @domid to transitively access a subrange of
+ *                  @trans_grant in @trans_domid.  No mappings are allowed.
+ */
+#define GTF_invalid         (0U<<0)
+#define GTF_permit_access   (1U<<0)
+#define GTF_accept_transfer (2U<<0)
+#define GTF_transitive      (3U<<0)
+#define GTF_type_mask       (3U<<0)
+
+/*
+ * Subflags for GTF_permit_access.
+ *  GTF_readonly: Restrict @domid to read-only mappings and accesses. [GST]
+ *  GTF_reading: Grant entry is currently mapped for reading by @domid. [XEN]
+ *  GTF_writing: Grant entry is currently mapped for writing by @domid. [XEN]
+ *  GTF_PAT, GTF_PWT, GTF_PCD: (x86) cache attribute flags for the grant [GST]
+ *  GTF_sub_page: Grant access to only a subrange of the page.  @domid
+ *                will only be allowed to copy from the grant, and not
+ *                map it. [GST]
+ */
+#define _GTF_readonly       (2)
+#define GTF_readonly        (1U<<_GTF_readonly)
+#define _GTF_reading        (3)
+#define GTF_reading         (1U<<_GTF_reading)
+#define _GTF_writing        (4)
+#define GTF_writing         (1U<<_GTF_writing)
+#define _GTF_PWT            (5)
+#define GTF_PWT             (1U<<_GTF_PWT)
+#define _GTF_PCD            (6)
+#define GTF_PCD             (1U<<_GTF_PCD)
+#define _GTF_PAT            (7)
+#define GTF_PAT             (1U<<_GTF_PAT)
+#define _GTF_sub_page       (8)
+#define GTF_sub_page        (1U<<_GTF_sub_page)
+
+struct grant_entry_header {
+    u16 flags;
+    u32  domid;
+};
+typedef struct grant_entry_header grant_entry_header_t;
+
+/*
+ * Version 2 of the grant entry structure.
+ */
+//#define grant_entry_v1 grant_entry
+#define grant_entry_v1_t grant_entry_t
+
+struct grant_entry_v1 {
+    /* GTF_xxx: various type and flag information.  [XEN,GST] */
+    u16 flags;
+    /* The domain being granted foreign privileges. [GST] */
+    u32  domid;
+    /*
+     * GTF_permit_access: Frame that @domid is allowed to map and access. [GST]
+     * GTF_accept_transfer: Frame whose ownership transferred by @domid. [XEN]
+     */
+    u32 frame;
+};
+typedef struct grant_entry_v1 grant_entry_v1_t;
+
+
+typedef u16 grant_status_t;
+
+/*
+ * Reference to a grant entry in a specified domains grant table.
+ */
+typedef u32 grant_ref_t;
+
+/*
+ * Handle to track a mapping created via a grant reference.
+ */
+typedef u32 grant_handle_t;
+
+/*
+ * GNTTABOP_map_grant_ref: Map the grant entry (<dom>,<ref>) for access
+ * by devices and/or host CPUs. If successful, <handle> is a tracking number
+ * that must be presented later to destroy the mapping(s). On error, <handle>
+ * is a negative status code.
+ * NOTES:
+ *  1. If GNTMAP_device_map is specified then <dev_bus_addr> is the address
+ *     via which I/O devices may access the granted frame.
+ *  2. If GNTMAP_host_map is specified then a mapping will be added at
+ *     either a host virtual address in the current address space, or at
+ *     a PTE at the specified machine address.  The type of mapping to
+ *     perform is selected through the GNTMAP_contains_pte flag, and the
+ *     address is specified in <host_addr>.
+ *  3. Mappings should only be destroyed via GNTTABOP_unmap_grant_ref. If a
+ *     host mapping is destroyed by other means then it is *NOT* guaranteed
+ *     to be accounted to the correct grant reference!
+ */
+#define GNTTABOP_map_grant_ref        0
+struct gnttab_map_grant_ref {
+    /* IN parameters. */
+    u64 host_addr;
+    u32 flags;               /* GNTMAP_* */
+    u32 ref;
+    u32  dom;
+    /* OUT parameters. */
+    u16  status;              /* GNTST_* */
+    grant_handle_t handle;
+    u64 dev_bus_addr;
+};
+typedef struct gnttab_map_grant_ref gnttab_map_grant_ref_t;
+
+/*
+ * GNTTABOP_unmap_grant_ref: Destroy one or more grant-reference mappings
+ * tracked by <handle>. If <host_addr> or <dev_bus_addr> is zero, that
+ * field is ignored. If non-zero, they must refer to a device/host mapping
+ * that is tracked by <handle>
+ * NOTES:
+ *  1. The call may fail in an undefined manner if either mapping is not
+ *     tracked by <handle>.
+ *  3. After executing a batch of unmaps, it is guaranteed that no stale
+ *     mappings will remain in the device or host TLBs.
+ */
+#define GNTTABOP_unmap_grant_ref      1
+struct gnttab_unmap_grant_ref {
+    /* IN parameters. */
+    u64 host_addr;
+    u64 dev_bus_addr;
+    grant_handle_t handle;
+    /* OUT parameters. */
+    u16  status;              /* GNTST_* */
+};
+typedef struct gnttab_unmap_grant_ref gnttab_unmap_grant_ref_t;
+
+/*
+ * GNTTABOP_setup_table: Set up a grant table for <dom> comprising at least
+ * <nr_frames> pages. The frame addresses are written to the <frame_list>.
+ * Only <nr_frames> addresses are written, even if the table is larger.
+ * NOTES:
+ *  1. <dom> may be specified as DOMID_SELF.
+ *  2. Only a sufficiently-privileged domain may specify <dom> != DOMID_SELF.
+ *  3. Xen may not support more than a single grant-table page per domain.
+ */
+#define GNTTABOP_setup_table          2
+struct gnttab_setup_table {
+    /* IN parameters. */
+    u32  dom;
+    u32 nr_frames;
+    /* OUT parameters. */
+    u16  status;              /* GNTST_* */
+    XEN_GUEST_HANDLE(ulong) frame_list;
+};
+typedef struct gnttab_setup_table gnttab_setup_table_t;
+
 /*
  * Wrappers for hypercalls
  */
