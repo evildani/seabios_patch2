@@ -513,6 +513,70 @@ struct xen_add_to_physmap {
 typedef struct xen_add_to_physmap xen_add_to_physmap_t;
 DEFINE_XEN_GUEST_HANDLE(xen_add_to_physmap_t);
 
+/* -------------------------------------------------------------------------
+ * xen/include/public/io/blkif.h
+ * blkif.h
+ *
+ * Unified block-device I/O interface for Xen guest OSes.
+ *
+ * Copyright (c) 2003-2004, Keir Fraser
+ */
+
+enum blkif_state {
+         BLKIF_STATE_DISCONNECTED,
+         BLKIF_STATE_CONNECTED,
+        BLKIF_STATE_SUSPENDED,
+};
+
+/*
+ * REQUEST CODES.
+ */
+#define BLKIF_OP_READ              0
+#define BLKIF_OP_WRITE             1
+#define BLKIF_MAX_SEGMENTS_PER_REQUEST 8
+/*
+ * NB. first_sect and last_sect in blkif_request_segment, as well as
+ * sector_number in blkif_request, are always expressed in 512-byte units.
+ * However they must be properly aligned to the real sector size of the
+ * physical disk, which is reported in the "sector-size" node in the backend
+ * xenbus info. Also the xenbus "sectors" node is expressed in 512-byte units.
+ */
+struct blkif_request_segment {
+    u32 gref;        /* reference to I/O buffer frame        */
+    /* @first_sect: first sector in frame to transfer (inclusive).   */
+    /* @last_sect: last sector in frame to transfer (inclusive).     */
+    u8     first_sect, last_sect;
+};
+
+
+
+struct blkif_request {
+    u8        operation;    /* BLKIF_OP_???                         */
+    u8        nr_segments;  /* number of segments                   */
+    u16   handle;       /* only for read/write requests    ????     */
+    u64       id;           /* private guest value, echoed in resp  */
+    u64 sector_number;/* start sector idx on disk (r/w only)  */
+    struct blkif_request_segment seg[BLKIF_MAX_SEGMENTS_PER_REQUEST];
+};
+typedef struct blkif_request blkif_request_t;
+
+
+struct blkif_response {
+    u64        id;              /* copied from request */
+    u8         operation;       /* copied from request */
+    u16         status;          /* BLKIF_RSP_???       */
+};
+typedef struct blkif_response blkif_response_t;
+
+/*
+ * STATUS RETURN CODES.
+ */
+ /* Operation not supported (only happens on barrier writes). */
+#define BLKIF_RSP_EOPNOTSUPP  -2
+ /* Operation failed for some unspecified reason (-EIO). */
+#define BLKIF_RSP_ERROR       -1
+ /* Operation completed successfully. */
+#define BLKIF_RSP_OKAY         0
 
 /*
  * Wrappers for hypercalls
